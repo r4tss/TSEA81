@@ -89,7 +89,24 @@ void lift_delete(lift_type lift)
    shall be changed */
 void lift_next_floor(lift_type lift, int *next_floor, int *change_direction)
 {
-    
+	/* Depending on passengers, persons and lift direction, choose the next floor to go to */
+	pthread_mutex_lock(&lift->mutex);
+
+	if (lift->up == 0) {
+		if (lift->floor == 1) {
+			*change_direction = 1;
+		}
+		*next_floor = lift->floor - 1;
+	}
+	else if (lift->up == 1) {
+		if (lift->floor == N_FLOORS - 2) {
+			*change_direction = 1;
+		}
+		*next_floor = lift->floor + 1;
+	}
+
+	pthread_mutex_unlock(&lift->mutex);
+	
 }
 
 void lift_move(lift_type lift, int next_floor, int change_direction)
@@ -205,12 +222,55 @@ static int n_passengers_in_lift(lift_type lift)
     return n_passengers; 
 }
 
+static int passengers_leaving(lift_type lift)
+{
+	int i;
+	int n = 0;
+
+	for(i = 0;i < MAX_N_PASSENGERS; i++)
+	{
+		if(lift->passengers_in_lift[i].to_floor == lift->floor)
+		{
+			n++;
+		}
+	}
+
+	return n;
+}
+
+static int persons_entering(lift_type lift)
+{
+	int i;
+	int n = 0;
+
+	for (i = 0;i < MAX_N_PERSONS;i++)
+	{
+		if(lift->persons_to_enter[lift->floor][i].id != NO_ID)
+		{
+			n++;
+		}
+	}
+
+	return n;
+}
+
 /* MONITOR function lift_has_arrived: shall be called by the lift task
    when the lift has arrived at the next floor. This function indicates
    to other tasks that the lift has arrived, and then waits until the lift
    shall move again. */
 void lift_has_arrived(lift_type lift)
 {
+	pthread_mutex_lock(&lift->mutex);
+
+	pthread_cond_broadcast(&lift->change);
+
+	// Wait for ppl to leave and enter
+	while(passengers_leaving(lift) > 0 && (persons_entering(lift) > 0 || n_passengers_in_lift(lift) < MAX_N_PASSENGERS))
+	{
+		pthread_cond_wait(&lift->change, &lift->mutex);
+	}
+
+	pthread_mutex_unlock(&lift->mutex);
 }
 
 /* --- functions related to lift task END --- */
@@ -293,10 +353,91 @@ static void leave_floor(
     lift->persons_to_enter[enter_floor][floor_index].to_floor = NO_FLOOR; 
 }
 
+static void enter_lift(lift_type lift, int id, int to_floor)
+{
+	int i; 
+    int passenger_index; 
+    int found; 
+
+    /* enter the lift */
+    found = 0; 
+    for (i = 0; i < MAX_N_PASSENGERS && !found; i++)
+    {
+        if (lift->passengers_in_lift[i].id == NO_ID)
+        {
+            found = 1;
+            passenger_index = i;
+        }
+    }
+        
+    if (!found)
+    {
+        lift_panic("cannot enter elevator"); 
+    }
+
+	/* enter lift at index passenger_index */
+	lift->passengers_in_lift[passenger_index].id = id;
+	lift->passengers_in_lift[passenger_index].to_floor = to_floor;
+}
+
+static void leave_lift(lift_type lift, int id)
+{
+	int i; 
+    int passenger_index; 
+    int found; 
+
+    /* leave the lift */
+    found = 0; 
+    for (i = 0; i < MAX_N_PASSENGERS && !found; i++)
+    {
+        if (lift->passengers_in_lift[i].id == id)
+        {
+            found = 1;
+            passenger_index = i;
+        }
+    }
+        
+    if (!found)
+    {
+        lift_panic("cannot leave elevator"); 
+    }
+
+    /* leave lift at index to_floor */ 
+	lift->passengers_in_lift[passenger_index].id = NO_ID;
+	lift->passengers_in_lift[passenger_index].to_floor = NO_FLOOR;
+}
+
 /* MONITOR function lift_travel: performs a journey with the lift
    starting at from_floor, and ending at to_floor */ 
 void lift_travel(lift_type lift, int id, int from_floor, int to_floor)
 {
+	pthread_mutex_lock(&lift->mutex);
+	
+	enter_floor(lift, id, from_floor, to_floor);
+
+	// Wait for lift to arrive at from_floor
+	while(passenger_wait_for_lift(lift, from_floor))
+	{
+		pthread_cond_wait(&lift->change, &lift->mutex);
+	}
+	
+	leave_floor(lift, id, from_floor);
+
+	enter_lift(lift, id, to_floor);
+
+	pthread_cond_broadcast(&lift->change);
+
+	// Wait for lift to get to to_floor
+	while(passenger_wait_for_lift(lift, to_floor))
+	{
+		pthread_cond_wait(&lift->change, &lift->mutex);
+	}
+
+	leave_lift(lift, id);
+
+	pthread_cond_broadcast(&lift->change);
+	
+	pthread_mutex_unlock(&lift->mutex);
 }
 
 /* --- functions related to person task END --- */

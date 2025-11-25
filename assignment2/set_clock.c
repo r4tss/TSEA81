@@ -16,7 +16,7 @@ void *clock_thread(void *unused)
 	struct timespec ts;
 	
     /* local copies of the current time and alarm state */ 
-    int hours, minutes, seconds, alarm_hours, alarm_minutes, alarm_seconds;
+    int hours, minutes, seconds, alarm_hours, alarm_minutes, alarm_seconds, alarm_enabled;
 
 	/* initialize time for next update */
 	clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -29,7 +29,8 @@ void *clock_thread(void *unused)
         display_time(hours, minutes, seconds);
 
 		/* check if alarm is enabled */
-		if(alarm_enabled())
+		get_alarm_enabled(&alarm_enabled);
+		if(alarm_enabled)
 		{
 			/* read and display alarm time */
 			get_alarm_time(&alarm_hours, &alarm_minutes, &alarm_seconds);
@@ -72,7 +73,11 @@ void *alarm_thread(void *unused)
 		/* initialize time for next update */
 		clock_gettime(CLOCK_MONOTONIC, &ts);
 
-		while(alarm_enabled())
+		int alarm_enabled;
+
+		get_alarm_enabled(&alarm_enabled);
+
+		while(alarm_enabled)
 		{
 			display_alarm_text();
 			
@@ -86,6 +91,8 @@ void *alarm_thread(void *unused)
 				ts.tv_sec++;
 			}
 			clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL);
+
+			get_alarm_enabled(&alarm_enabled);
 		}
 	}
 }

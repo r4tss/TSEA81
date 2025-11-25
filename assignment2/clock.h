@@ -14,8 +14,11 @@ void get_time(int *hours, int *minutes, int *seconds);
 /* set_alarm: set alarm hours, minutes and seconds, also enable alarm */
 void set_alarm_time(int hours, int minutes, int seconds);
 
-/* alarm_enabled: read state of alarm */
-int alarm_enabled(void);
+/* unsafe, use get_alarm_enabled() instead */
+/* /\* alarm_enabled: read state of alarm *\/ */
+/* int alarm_enabled(void); */
+
+void get_alarm_enabled(int *alarm_enabled);
 
 /* reset_alarm: reset alarm */
 void reset_alarm(void);

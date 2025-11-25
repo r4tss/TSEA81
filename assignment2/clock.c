@@ -137,11 +137,27 @@ void set_alarm_time(int hours, int minutes, int seconds)
 	pthread_mutex_unlock(&Clock.mutex);
 }
 
-/* alarm_enabled: read state of alarm */
-int alarm_enabled(void)
+/* this is unsafe, variables should always be sent to local variables and reserved using mutex */
+
+/* /\* alarm_enabled: read state of alarm *\/ */
+/* int get_alarm_state(void) */
+/* { */
+
+	
+/* 	/\* read alarm state *\/ */
+/* 	return Clock.alarm_enabled; */
+/* } */
+
+void get_alarm_enabled(int *alarm_enabled)
 {
-	/* read alarm state */
-	return(Clock.alarm_enabled);
+	/* reserve clock variables */
+	pthread_mutex_lock(&Clock.mutex);
+
+	/* read alarm enabled value */
+	*alarm_enabled = Clock.alarm_enabled;
+
+	/* release clock variables */
+	pthread_mutex_unlock(&Clock.mutex);
 }
 
 /* reset_alarm: reset alarm */

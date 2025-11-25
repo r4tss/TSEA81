@@ -6,9 +6,9 @@
 #include <unistd.h>
 #include <sys/prctl.h>
 #include "lift.h"
+#include "draw.h"
 #include "si_ui.h"
 #include "debug.h"
-
 
 // Unfortunately the rand() function is not thread-safe. However, the
 // rand_r() function is thread-safe, but need a pointer to an int to
@@ -31,6 +31,8 @@ static int get_random_value(int passenger_id, int maximum_value)
 
 static lift_type Lift;
 
+static sem_t passenger_semaphore;
+
 // Initialize the random seeds used by the get_random_value() function
 // above.
 static void init_random(void)
@@ -50,12 +52,22 @@ static void init_random(void)
 	}
 }
 
-
-
 static void *lift_thread(void *unused)
 {
-	while(1){
-		// Move lift one floor
+	/* this thread should call: */
+	/* lift_next_floor() */
+	/* lift_move() */
+	/* lift_has_arrived() */
+	
+	int next_floor;
+	int change_direction = 0;
+	
+	while(1)
+	{
+		lift_next_floor(Lift, &next_floor, &change_direction);
+		lift_move(Lift, next_floor, change_direction);
+		lift_has_arrived(Lift);
+		change_direction = 0;
 	}
 	return NULL;
 }
@@ -69,37 +81,90 @@ static void *passenger_thread(void *idptr)
 	int *tmp = (int *) idptr;
 	int id = *tmp;
 
-        // Sets a unique name shown in debuggers
-        char buf[100];
-        sprintf(buf, "Passenger #%d", id);
+	// We've read the id, so the user_thread can change the ID
+	sem_post(&passenger_semaphore);
+
+	// Sets a unique name shown in debuggers
+	char buf[100];
+	sprintf(buf, "Passenger #%d", id);
 	prctl(PR_SET_NAME,buf,0,0,0);
 
-	while(1){
+	while(1)
+	{
 		// * Select random floors
+		int from_floor = get_random_value(id, N_FLOORS - 1);
+		int to_floor = get_random_value(id, N_FLOORS - 1);
+	
+		while(from_floor == to_floor)
+		{
+			to_floor = get_random_value(id, N_FLOORS - 1);
+		}
+
 		// * Travel between these floors
+		lift_travel(Lift, id, from_floor, to_floor);
+
 		// * Wait a little while (~5 seconds)
+		sleep(5);
 	}
+
 	return NULL;
 }
 
 static void *user_thread(void *unused)
 {
 	int current_passenger_id = 0;
-	char message[SI_UI_MAX_MESSAGE_SIZE]; 
+	char message[SI_UI_MAX_MESSAGE_SIZE];
 
-	si_ui_set_size(670, 700); 
+	si_ui_set_size(1024, 720);
 	prctl(PR_SET_NAME,"User Thread",0,0,0); // Sets the name shown in debuggers for this thread
+
+	pthread_t passenger_thread_handle[MAX_N_PERSONS];
 	
 	while(1){
 		// Read a message from the GUI
 		si_ui_receive(message);
-		if(!strcmp(message, "new")){
+
+		/* create a new passenger */
+		if(!strcmp(message, "new"))
+		{
 			// create a new passenger if possible, else
 			// use si_ui_show_error() to show an error
 			// message if too many passengers have been
 			// created. Make sure that each passenger gets
 			// a unique ID between 0 and MAX_N_PERSONS-1.
-		}else if(!strcmp(message, "exit")){
+
+			// current_passenger_id = first_free_id(Lift);
+			
+			if(current_passenger_id < MAX_N_PERSONS)
+			{
+				pthread_create(&passenger_thread_handle[current_passenger_id], NULL, passenger_thread, (void *) &current_passenger_id);
+
+				sem_wait(&passenger_semaphore);
+				
+				current_passenger_id++;
+			}
+			else
+			{
+				si_ui_show_error("Can't add a new person!");
+			}
+		}
+		/* pause using the debug module */
+		else if(!strcmp(message, "pause"))
+		{
+			debug_pause();
+		}
+		/* unpause using the debug module */
+		else if(!strcmp(message, "unpause"))
+		{
+			debug_unpause();
+		}
+		/* test using the debug module */
+		else if(!strncmp(message, "test", 4))
+		{
+		}
+		/* exit the program */
+		else if(!strcmp(message, "exit"))
+		{
 			lift_delete(Lift);
 			exit(0);
 		}
@@ -107,15 +172,24 @@ static void *user_thread(void *unused)
 	return NULL;
 }
 
-
 int main(int argc, char **argv)
 {
 	si_ui_init();
 	init_random();
 	Lift = lift_create();
+	debug_init();
 
-        // Create tasks as appropriate here
+	sem_init(&passenger_semaphore, 0, 0);
+
+	// Create tasks as appropriate here
+	pthread_t lift_thread_handle;
+	pthread_t user_thread_handle;
+
+	pthread_create(&lift_thread_handle, NULL, lift_thread, 0);
+	pthread_create(&user_thread_handle, NULL, user_thread, 0);
 	
+	pthread_join(lift_thread_handle, NULL);
+	pthread_join(user_thread_handle, NULL);
 
 	return 0;
 }
