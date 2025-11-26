@@ -24,18 +24,18 @@ static pid_t liftmove_pid;
 static pid_t person_pid[MAX_N_PERSONS];
 
 typedef enum {LIFT_TRAVEL, // A travel message is sent to the list process when a person would
-	                   // like to make a lift travel
-	      LIFT_TRAVEL_DONE, // A travel done message is sent to a person process when a
-	                        // lift travel is finished
-	      LIFT_MOVE         // A move message is sent to the lift task when the lift shall move
-	                        // to the next floor
+			  // like to make a lift travel
+			  LIFT_TRAVEL_DONE, // A travel done message is sent to a person process when a
+			  // lift travel is finished
+			  LIFT_MOVE         // A move message is sent to the lift task when the lift shall move
+			  // to the next floor
 } lift_msg_type; 
 
 struct lift_msg{
-  lift_msg_type type;  // Type of message
-  int person_id;       // Specifies the person
-  int from_floor;      // Specify source and destion for the LIFT_TRAVEL message.
-  int to_floor;
+	lift_msg_type type;  // Type of message
+	int person_id;       // Specifies the person
+	int from_floor;      // Specify source and destion for the LIFT_TRAVEL message.
+	int to_floor;
 };
 
 
@@ -43,7 +43,7 @@ struct lift_msg{
 // Since we use processes now and not 
 static int get_random_value(int person_id, int maximum_value)
 {
-  return rand() % (maximum_value + 1);
+	return rand() % (maximum_value + 1);
 }
 
 
@@ -51,102 +51,153 @@ static int get_random_value(int person_id, int maximum_value)
 // above.
 static void init_random(void)
 {
-  srand(getpid()); // The pid should be a good enough initialization for
-                   // this case at least.
+	srand(getpid()); // The pid should be a good enough initialization for
+	// this case at least.
 }
 
 
 static void liftmove_process(void)
 {
-  struct lift_msg m;
-  while(1){
+	struct lift_msg m;
+	m.type = LIFT_MOVE;
+  
+	while(1){
 #ifdef NEWGUI
-    usleep(4000000); // sleep 4 seconds
+		usleep(4000000); // sleep 4 seconds
 #else
-    usleep(2000000); // sleep 2 seconds
+		usleep(2000000); // sleep 2 seconds
 #endif
-    // TODO:
-    //    Send a message to the lift process to move the lift.
-  }
+		// TODO:
+		//    Send a message to the lift process to move the lift.
+		message_send((char *) &m, sizeof(m), QUEUE_LIFT, 0);
+	}
 }
 
 
 static void lift_process(void)
 {
-  lift_type Lift;
-  Lift = lift_create();
-  int change_direction, next_floor;
+	lift_type Lift;
+	Lift = lift_create();
+	int change_direction = 0, next_floor;
     
-  char msgbuf[4096];
-  while(1) {
-    int i;
-    struct lift_msg reply;
-    struct lift_msg *m;
-    message_send((char *) Lift, sizeof(*Lift), QUEUE_UI,0); // Draw the lift
-    int len = message_receive(msgbuf, 4096, QUEUE_LIFT); // Wait for a message
-    if (len < sizeof(struct lift_msg)) {
-      fprintf(stderr, "Message too short\n");
-      continue;
-    }
+	char msgbuf[4096];
+	while(1) {
+		int i;
+		struct lift_msg reply;
+		struct lift_msg *m;
+		message_send((char *) Lift, sizeof(*Lift), QUEUE_UI,0); // Draw the lift
+		int len = message_receive(msgbuf, 4096, QUEUE_LIFT); // Wait for a message
+		if (len < sizeof(struct lift_msg)) {
+			fprintf(stderr, "Message too short\n");
+			continue;
+		}
 
-    m = (struct lift_msg *) msgbuf;
+		m = (struct lift_msg *) msgbuf;
 
-    switch(m->type) {
+		switch(m->type) {
 
-    case LIFT_MOVE:
+		case LIFT_MOVE:
 #ifdef NEWGUI
-      Lift->moving = 1; // only used in draw.c
-      message_send((char *) Lift, sizeof(*Lift), QUEUE_UI,0); // Draw the lift
-      usleep(1000000);  // "closing doors"
+			Lift->moving = 1; // only used in draw.c
+			message_send((char *) Lift, sizeof(*Lift), QUEUE_UI,0); // Draw the lift
+			usleep(1000000);  // "closing doors"
 #endif
 
-      // TODO: 
-      //    Move the lift
+			// Move lift
+			lift_next_floor(Lift, &next_floor, &change_direction);
+			lift_move(Lift, next_floor, change_direction);
+			change_direction = 0;
 
+			message_send((char *) Lift, sizeof(*Lift), QUEUE_UI,0); // Draw the lift
 
 #ifdef NEWGUI
-      usleep(1000000); // "opening doors"
-      Lift->moving = 0; // only used in draw.c
-      message_send((char *) Lift, sizeof(*Lift), QUEUE_UI,0); // Draw the lift
+			usleep(1000000); // "opening doors"
+			Lift->moving = 0; // only used in draw.c
+			message_send((char *) Lift, sizeof(*Lift), QUEUE_UI,0); // Draw the lift
 #endif
+			//    Check if passengers want to leave elevator
+			for (i = 0;i < MAX_N_PASSENGERS;i++)
+			{
+				if (Lift->passengers_in_lift[i].to_floor == Lift->floor)
+				{
+					//        Send a LIFT_TRAVEL_DONE for each passenger that leaves
+					//        the elevator
+					reply.type = LIFT_TRAVEL_DONE;
+					message_send((char *) &reply, sizeof(reply), QUEUE_FIRSTPERSON + Lift->passengers_in_lift[i].id, 0);
+					
+					//        Remove the passenger from the elevator
+					Lift->passengers_in_lift[i].id = NO_ID;
+					Lift->passengers_in_lift[i].to_floor = NO_FLOOR;
+				}
+			}
 
-
-      // TODO: 
-      //    Check if passengers want to leave elevator
-      //        Remove the passenger from the elevator
-      //        Send a LIFT_TRAVEL_DONE for each passenger that leaves
-      //        the elevator
-      //    Check if passengers want to enter elevator
-      //        Remove the passenger from the floor and into the elevator
-
-      
-      break;
-
-    case LIFT_TRAVEL:
- 
-      // TODO:
-      //    Update the Lift structure so that the person with the given ID  is now present on the floor
-
-
-      break;
-    }
-  }
-  return;
+			//    Check if passengers want to enter elevator
+			for (i = 0;i < MAX_N_PERSONS;i++)
+			{
+				//        Remove the passenger from the floor and into the elevator
+				int id = Lift->persons_to_enter[Lift->floor][i].id;
+				if (id != NO_ID && (n_passengers_in_lift(Lift) < MAX_N_PASSENGERS))
+				{
+					int to_floor = Lift->persons_to_enter[Lift->floor][i].to_floor;
+					
+					leave_floor(Lift, id, Lift->floor);
+					enter_lift(Lift, id, to_floor);
+				}
+			}
+			break;
+			
+		case LIFT_TRAVEL:
+			// TODO:
+			//    Update the Lift structure so that the person with the given ID  is now present on the floor
+			for (i = 0;i < MAX_N_PERSONS;i++)
+			{
+				if (Lift->persons_to_enter[m->from_floor][i].id == NO_ID)
+				{
+					Lift->persons_to_enter[m->from_floor][i].id = m->person_id;
+					Lift->persons_to_enter[m->from_floor][i].to_floor = m->to_floor;
+					break;
+				}
+			}
+			
+			break;
+		case LIFT_TRAVEL_DONE:
+			break;
+		}
+	}
+	return;
 }
  
 
 static void person_process(int id)
 {
-  init_random();
-  char buf[4096];
-  struct lift_msg m;
-  while(1){
-    // TODO:
-    //    Generate a to and from floor
-    //    Send a LIFT_TRAVEL message to the lift process
-    //    Wait for a LIFT_TRAVEL_DONE message
-    //    Wait a little while
-  }
+	init_random();
+	char buf[4096];
+	struct lift_msg m;
+	while(1){
+		m.person_id = id;
+		//    Generate a to and from floor
+		m.to_floor = get_random_value(id, N_FLOORS - 1);
+		m.from_floor = get_random_value(id, N_FLOORS - 1);
+		while (m.to_floor == m.from_floor)
+		{
+			m.from_floor = get_random_value(id, N_FLOORS - 1);
+		}
+		
+		//    Send a LIFT_TRAVEL message to the lift process
+		message_send((char *) &m, sizeof(m), QUEUE_LIFT, 0);
+
+		//    Wait for a LIFT_TRAVEL_DONE message
+		int len = message_receive(buf, 4096, QUEUE_FIRSTPERSON + id);
+
+		if(len < sizeof(struct lift_msg))
+		{
+			fprintf(stderr, "Message too short\n");
+			continue;
+		}
+
+		//    Wait a little while
+	    usleep(5000000);
+	}
 }
 
 // This is the final process called by main()
@@ -155,67 +206,81 @@ static void person_process(int id)
 //   * Killing off all processes when exiting the application
 void uicommand_process(void)
 {
-  int i;
-  int current_person_id = 0;
-  char message[SI_UI_MAX_MESSAGE_SIZE]; 
-  while(1){
-    // Read a message from the GUI
-    si_ui_receive(message);
-    if(!strcmp(message, "new")){
-      // TODO:
-      // * Check that we don't create too many persons
-      // * fork and create a new person process (and
-      //   record the new pid in person_pid[])
-    }else if(!strcmp(message, "exit")){
-      // The code below sends the SIGINT signal to
-      // all processes involved in this application
-      // except for the uicommand process itself
-      // (which is exited by calling exit())
-      kill(uidraw_pid, SIGINT);
-      kill(lift_pid, SIGINT);
-      kill(liftmove_pid, SIGINT);
-      for(i=0; i < MAX_N_PERSONS; i++){
-	if(person_pid[i] > 0){
-	  kill(person_pid[i], SIGINT);
+	int i;
+	int current_person_id = 0;
+	char message[SI_UI_MAX_MESSAGE_SIZE]; 
+	while(1){
+		// Read a message from the GUI
+		si_ui_receive(message);
+		if(!strcmp(message, "new")){
+			// * Check that we don't create too many persons
+			// * fork and create a new person process (and
+			//   record the new pid in person_pid[])
+			if (current_person_id < MAX_N_PERSONS)
+			{
+				person_pid[current_person_id] = fork();
+				
+				if (!person_pid[current_person_id])
+				{
+					person_process(current_person_id);
+				}
+
+				current_person_id++;
+			}
+			else
+			{
+				si_ui_show_error("Can't add a new person!");
+			}
+		}else if(!strcmp(message, "exit")){
+			// The code below sends the SIGINT signal to
+			// all processes involved in this application
+			// except for the uicommand process itself
+			// (which is exited by calling exit())
+			kill(uidraw_pid, SIGINT);
+			kill(lift_pid, SIGINT);
+			kill(liftmove_pid, SIGINT);
+			for(i=0; i < MAX_N_PERSONS; i++){
+				if(person_pid[i] > 0){
+					kill(person_pid[i], SIGINT);
+				}
+			}
+			exit(0);
+		}
 	}
-      }
-      exit(0);
-    }
-  }
 }
 
 // This process is responsible for drawing the lift. Receives lift_type structures
 // as messages.
 void uidraw_process(void)
 {
-  char msg[1024];
-  si_ui_set_size(670, 700); 
-  while(1){
-    message_receive(msg, 1024, QUEUE_UI);
-    lift_type Lift = (lift_type) &msg[0];
-    draw_lift(Lift);
-  }
+	char msg[1024];
+	si_ui_set_size(670, 700); 
+	while(1){
+		message_receive(msg, 1024, QUEUE_UI);
+		lift_type Lift = (lift_type) &msg[0];
+		draw_lift(Lift);
+	}
 }
 
 int main(int argc, char **argv)
 {
-  message_init();
-  si_ui_init(); // Initialize user interface. (Must be done
-  // here!)
+	message_init();
+	si_ui_init(); // Initialize user interface. (Must be done
+	// here!)
 
-  lift_pid = fork();
-  if(!lift_pid) {
-    lift_process();
-  }
-  uidraw_pid = fork();
-  if(!uidraw_pid){
-    uidraw_process();
-  }
-  liftmove_pid = fork();
-  if(!liftmove_pid){
-    liftmove_process();
-  }
-  uicommand_process();
+	lift_pid = fork();
+	if(!lift_pid) {
+		lift_process();
+	}
+	uidraw_pid = fork();
+	if(!uidraw_pid){
+		uidraw_process();
+	}
+	liftmove_pid = fork();
+	if(!liftmove_pid){
+		liftmove_process();
+	}
+	uicommand_process();
 
-  return 0;
+	return 0;
 }

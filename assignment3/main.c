@@ -99,6 +99,8 @@ static void *passenger_thread(void *idptr)
 		{
 			to_floor = get_random_value(id, N_FLOORS - 1);
 		}
+		
+		debug_check_override(id, &from_floor, &to_floor);
 
 		// * Travel between these floors
 		lift_travel(Lift, id, from_floor, to_floor);
@@ -161,6 +163,11 @@ static void *user_thread(void *unused)
 		/* test using the debug module */
 		else if(!strncmp(message, "test", 4))
 		{
+			int i;
+
+			for (i = 0; i <= current_passenger_id; i++) {
+				debug_override(i, 0, 3);
+			}
 		}
 		/* exit the program */
 		else if(!strcmp(message, "exit"))
