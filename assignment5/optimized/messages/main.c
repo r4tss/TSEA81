@@ -213,7 +213,7 @@ static void person_process(int id)
 	m.person_id = id;
 	
 	while(i < 100){
-		for (int trip = 0;trip < 10;trip++)
+		for (int trip = 0;trip < 100;trip++)
 		{
 			//    Generate a to and from floor
 			m.to_floor[trip] = get_random_value(id, N_FLOORS - 1);

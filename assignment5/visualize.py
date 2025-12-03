@@ -11,7 +11,7 @@ unoptimized_messages = np.array([287, 572, 836, 1130, 1427, 1742, 2107, 2511, 29
 
 optimized_pthreads = np.array([802, 1676, 2759, 4161, 6069, 8525, 11028, 13909, 17242])
 
-optimized_messages = np.array([114, 232, 357, 489, 634, 789, 954, 1131, 1321, 1582, 1746, 1977, 2221])
+optimized_messages = np.array([62, 124, 193, 266, 340, 424, 518, 620, 731, 849, 961, 1077, 1204])
 
 plt.subplot(2, 2, 1)
 plt.plot(N1, unoptimized_pthreads)
